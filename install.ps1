@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Installs Omarchy (Arch Linux + Hyprland) as a GPU-accelerated desktop on Windows 11, using WSL.
+    Installs Omarchy (Arch Linux + Hyprland) as a GPU-accelerated desktop on Windows 10/11, using WSL.
 
 .DESCRIPTION
     Run it from PowerShell (no administrator rights needed; Windows asks for them once if WSL itself
@@ -18,6 +18,8 @@
 
 .PARAMETER Distro
     Name of the WSL distro to create (default: Omarchy).
+.PARAMETER Location
+    Folder where the WSL distro will be installed (default: WSL default location).
 .PARAMETER Image
     Install from this .wsl file or https URL instead of the latest release.
 .PARAMETER Exe
@@ -29,6 +31,7 @@
 #>
 param(
     [string]$Distro = "Omarchy",
+    [string]$Location = "",
     [string]$Image = "",
     [string]$Exe = "",
     [switch]$Yes,
@@ -99,8 +102,8 @@ function Get-File($url, $dest) {
 Say "`nOmarchy for WSL installer`n" Cyan
 
 $build = [Environment]::OSVersion.Version.Build
-if ($build -lt 22000) {
-    Stop-Install "Omarchy needs Windows 11 (this is Windows build $build)."
+if ($build -lt 19041) {
+    Stop-Install "Omarchy needs Windows 10 (build 19041 or newer) or Windows 11 (this is Windows build $build)."
 }
 
 $wsl = Get-WslVersion
@@ -116,12 +119,22 @@ if (-not $wsl) {
 # Re-running the installer over an existing install keeps the distro and only updates omarchy.exe and
 # its shortcuts (`omarchy install` skips the image when the distro exists).
 $existing = $wsl -and (Test-Distro $Distro)
+
+if (-not $existing -and -not $Location -and -not $Yes) {
+    $defaultLoc = Join-Path $env:LOCALAPPDATA "wsl\$Distro"
+    $userLoc = Read-Host "Where should the '$Distro' distro be installed? [Default: $defaultLoc]"
+    if ($userLoc -and $userLoc.Trim()) {
+        $Location = [System.IO.Path]::GetFullPath($userLoc.Trim().Trim('"').Trim("'"))
+    }
+}
+
 if (-not $Exe) { $steps += "Download omarchy.exe from $Release." }
 if ($existing) {
     $steps += "Keep your existing '$Distro' distro as it is, and update omarchy.exe, the Start menu entry and the 'omarchy' command. (To update the Linux side, run 'omarchy update'.)"
 } else {
     if (-not $Image) { $steps += "Download the Omarchy image (about 1.7 GB; it needs about 7 GB of disk once installed)." }
-    $steps += "Create a new WSL distro named '$Distro' (your other WSL distros are not touched), ask you for a user name and password, and add 'Omarchy' to the Start menu and the 'omarchy' command."
+    $locDesc = if ($Location) { " in '$Location'" } else { " in default location" }
+    $steps += "Create a new WSL distro named '$Distro'$locDesc (your other WSL distros are not touched), ask you for a user name and password, and add 'Omarchy' to the Start menu and the 'omarchy' command."
 }
 
 if ($wsl) { Say "WSL $wsl is installed." }
@@ -179,6 +192,7 @@ try {
     $installArgs = @("install")
     if ($Image) { $installArgs += $Image }
     if ($Distro -ne "Omarchy") { $installArgs += @("--distro", $Distro) }
+    if ($Location) { $installArgs += @("--location", $Location) }
     if ($NoLauncher) { $installArgs += "--no-launcher" }
     & (Join-Path $work "omarchy.exe") @installArgs
     if ($LASTEXITCODE -ne 0) { Stop-Install "omarchy install failed (exit code $LASTEXITCODE)." }
